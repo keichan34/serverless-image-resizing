@@ -2,6 +2,35 @@ AWSTemplateFormatVersion: 2010-09-09
 
 Transform: AWS::Serverless-2016-10-31
 
+Parameters:
+  DomainName:
+    Type: String
+    Description: The DNS name of an existing Amazon Route 53 hosted zone
+    AllowedPattern: (?!-)[a-zA-Z0-9-.]{1,63}(?<!-)
+    ConstraintDescription: must be a valid DNS zone name.
+
+  FullDomainName:
+    Type: String
+    Description: The full domain name (img.example.com)
+    AllowedPattern: (?!-)[a-zA-Z0-9-.]{1,63}(?<!-)
+    ConstraintDescription: must be a valid DNS zone name.
+
+  AcmCertificateArn:
+    Type: String
+    Description: the Amazon Resource Name (ARN) of an AWS Certificate Manager (ACM) certificate.
+    AllowedPattern: "arn:aws:acm:.*"
+
+Mappings:
+  RegionMap:
+    us-east-1:
+      S3WebsiteEndpoint: s3-website-us-east-1.amazonaws.com
+    us-west-1:
+      S3WebsiteEndpoint: s3-website-us-west-1.amazonaws.com
+    us-west-2:
+      S3WebsiteEndpoint: s3-website-us-west-2.amazonaws.com
+    ap-northeast-1:
+      S3WebsiteEndpoint: s3-website-ap-northeast-1.amazonaws.com
+
 Resources:
   Api:
     Type: AWS::Serverless::Api
@@ -38,7 +67,7 @@ Resources:
       Environment:
         Variables:
           BUCKET: !Ref ImageBucket
-          URL: !GetAtt ImageBucket.WebsiteURL
+          URL: !Join ["", ["https://", !Ref FullDomainName]]
       Policies:
           Statement:
             - Resource: !Sub arn:aws:s3:::${ImageBucket}/*
@@ -65,8 +94,53 @@ Resources:
             Principal: "*"
             Resource: !Sub arn:aws:s3:::${ImageBucket}/*
 
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Aliases:
+          - !Ref FullDomainName
+        HttpVersion: http2
+        PriceClass: PriceClass_All
+        Origins:
+          - DomainName: !Join [., [!Ref 'ImageBucket', !FindInMap [RegionMap, !Ref 'AWS::Region', S3WebsiteEndpoint]]]
+            Id: s3bucket
+            CustomOriginConfig:
+              HTTPPort: '80'
+              HTTPSPort: '443'
+              OriginProtocolPolicy: http-only
+        Enabled: true
+        DefaultCacheBehavior:
+          ForwardedValues:
+            QueryString: false
+            Cookies:
+              Forward: none
+          TargetOriginId: s3bucket
+          ViewerProtocolPolicy: redirect-to-https
+          DefaultTTL: 0
+
+        ViewerCertificate:
+          AcmCertificateArn: !Ref AcmCertificateArn
+          SslSupportMethod: sni-only
+
+  DNSRecordSet:
+    Type: AWS::Route53::RecordSetGroup
+    Properties:
+      HostedZoneName: !Join ['', [!Ref 'DomainName', .]]
+      RecordSets:
+        - Name: !Ref 'FullDomainName'
+          Type: A
+          AliasTarget:
+            HostedZoneId: Z2FDTNDATAQYW2
+            DNSName: !GetAtt [CloudFrontDistribution, DomainName]
+        - Name: !Ref 'FullDomainName'
+          Type: AAAA
+          AliasTarget:
+            HostedZoneId: Z2FDTNDATAQYW2
+            DNSName: !GetAtt [CloudFrontDistribution, DomainName]
+
 Outputs:
   BucketWebsiteUrl:
-    Value: !GetAtt ImageBucket.WebsiteURL
+    Value: !Join ["", ["https://", !Ref FullDomainName]]
   Bucket:
     Value: !Ref ImageBucket

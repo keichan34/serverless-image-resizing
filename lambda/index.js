@@ -9,12 +9,25 @@ const Sharp = require('sharp');
 const BUCKET = process.env.BUCKET;
 const URL = process.env.URL;
 
+const notFoundResponse = function(callback) {
+  callback(null, {
+    statusCode: '404',
+    headers: {},
+    body: ''
+  });
+}
+
 exports.handler = function(event, context, callback) {
   const key = event.queryStringParameters.key;
-  const match = key.match(/(\d+)x(\d+)\/(.*)/);
+  const match = key.match(/^resize\/(\d+)x(\d+)\/(.*)/);
+  if (!match) {
+    return notFoundResponse(callback);
+  }
+
   const width = parseInt(match[1], 10);
   const height = parseInt(match[2], 10);
-  const originalKey = match[3];
+  const filename = match[3];
+  const originalKey = `original/${filename}`;
 
   S3.getObject({Bucket: BUCKET, Key: originalKey}).promise()
     .then(data => Sharp(data.Body)
@@ -27,6 +40,8 @@ exports.handler = function(event, context, callback) {
         Bucket: BUCKET,
         ContentType: 'image/png',
         Key: key,
+        StorageClass: "REDUCED_REDUNDANCY",
+        CacheControl: "max-age=31536000, public",
       }).promise()
     )
     .then(() => callback(null, {
@@ -35,5 +50,10 @@ exports.handler = function(event, context, callback) {
         body: '',
       })
     )
-    .catch(err => callback(err))
+    .catch(err => {
+      if (err.code === "NoSuchKey") {
+        return notFoundResponse(callback);
+      }
+      callback(err);
+    });
 }

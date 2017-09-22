@@ -2,6 +2,24 @@
 
 set -o errexit
 
+read -e -p "DomainName > " domain_name
+read -e -p "FullDomainName > " full_domain_name
+read -e -p "AcmCertificateArn > " acm_certificate_arn
+
+cfn_overrides="--parameter-overrides"
+if [[ ! -z "$domain_name" ]]; then
+  cfn_overrides="$cfn_overrides DomainName=$domain_name"
+fi
+if [[ ! -z "$full_domain_name" ]]; then
+  cfn_overrides="$cfn_overrides FullDomainName=$full_domain_name"
+fi
+if [[ ! -z "$acm_certificate_arn" ]]; then
+  cfn_overrides="$cfn_overrides AcmCertificateArn=$acm_certificate_arn"
+fi
+if [[ "$cfn_overrides" == "--parameter-overrides" ]]; then
+  cfn_overrides=""
+fi
+
 stack_name=ServerlessImageResize
 region="$(aws configure get region)"
 bucket_name="temp-serverless-resize-$(openssl rand -hex 8)"
@@ -23,7 +41,8 @@ aws cloudformation package \
 aws cloudformation deploy \
   --template-file=deploy/output.yaml \
   --stack-name="${stack_name}" \
-  --capabilities=CAPABILITY_NAMED_IAM
+  --capabilities=CAPABILITY_NAMED_IAM \
+  ${cfn_overrides}
 
 aws s3 rb --force "s3://${bucket_name}"
 
