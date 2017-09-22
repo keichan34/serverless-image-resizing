@@ -2,6 +2,8 @@ FROM amazonlinux
 
 ADD etc/nodesource.gpg.key /etc
 
+RUN echo "ap-northeast-1" > /etc/yum/vars/awsregion
+
 WORKDIR /tmp
 
 RUN yum -y install gcc-c++ && \
