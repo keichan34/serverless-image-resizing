@@ -25,14 +25,16 @@ const notFoundResponse = function(callback) {
 
 exports.handler = function(event, context, callback) {
   const key = event.queryStringParameters.key;
-  const match = key.match(/^resize\/(\d+)x(\d+)\/(.*)/);
+  const match = key.match(/^resize\/(\d+)x(\d+)(\^)?(!)?\/(.*)/);
   if (!match) {
     return notFoundResponse(callback);
   }
 
   const width = parseInt(match[1], 10);
   const height = parseInt(match[2], 10);
-  const filename = match[3];
+  const minValues = match[3] === "^";
+  const absValues = match[4] === "!";
+  const filename = match[5];
   const originalKey = `original/${filename}`;
 
   var fmt;
@@ -40,10 +42,19 @@ exports.handler = function(event, context, callback) {
   S3.getObject({Bucket: BUCKET, Key: originalKey}).promise()
     .then(data => {
       fmt = formatMap[data.ContentType] || 'png';
-      return Sharp(data.Body)
-      .resize(width, height)
-      .toFormat(fmt)
-      .toBuffer()
+      var s = Sharp(data.Body)
+        .resize(width, height)
+        .withoutEnlargement()
+
+      if (minValues) {
+        s = s.min();
+      } else if (!absValues) {
+        s = s.max();
+      }
+
+      return s
+        .toFormat(fmt)
+        .toBuffer()
     })
     .then(buffer => S3.putObject({
         Body: buffer,
