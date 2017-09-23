@@ -9,13 +9,19 @@ const Sharp = require('sharp');
 const BUCKET = process.env.BUCKET;
 const URL = process.env.URL;
 
+const formatMap = {
+  "image/jpeg": "jpeg",
+  "image/pjpeg": "jpeg",
+  "image/png": "png",
+};
+
 const notFoundResponse = function(callback) {
   callback(null, {
     statusCode: '404',
     headers: {},
     body: ''
   });
-}
+};
 
 exports.handler = function(event, context, callback) {
   const key = event.queryStringParameters.key;
@@ -29,16 +35,20 @@ exports.handler = function(event, context, callback) {
   const filename = match[3];
   const originalKey = `original/${filename}`;
 
+  var fmt;
+
   S3.getObject({Bucket: BUCKET, Key: originalKey}).promise()
-    .then(data => Sharp(data.Body)
+    .then(data => {
+      fmt = formatMap[data.ContentType] || 'png';
+      return Sharp(data.Body)
       .resize(width, height)
-      .toFormat('png')
+      .toFormat(fmt)
       .toBuffer()
-    )
+    })
     .then(buffer => S3.putObject({
         Body: buffer,
         Bucket: BUCKET,
-        ContentType: 'image/png',
+        ContentType: `image/${fmt}`,
         Key: key,
         StorageClass: "REDUCED_REDUNDANCY",
         CacheControl: "max-age=31536000, public",
